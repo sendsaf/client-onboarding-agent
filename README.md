@@ -58,6 +58,12 @@ npx wrangler d1 execute client-onboarding-agent-db --file=schema.sql
 
 Update `wrangler.jsonc` with your D1 `database_id`. Add your production route only when you are ready to deploy.
 
+For local development, apply the same schema to Wrangler's local D1 state:
+
+```bash
+npx wrangler d1 execute client-onboarding-agent-db --local --file=schema.sql
+```
+
 Generate Worker types:
 
 ```bash

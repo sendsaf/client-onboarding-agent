@@ -164,6 +164,9 @@ async function createConversation(request: Request, env: Env) {
 		VALUES (?, ?, ?, ?, 'active')
 	`).bind(conversationId, name, email, mobile).run();
 
+	const agent = await getAgentByName<Env, OnboardingAgent>(env.OnboardingAgent, conversationId);
+	await agent.initializeSession(email, name, mobile);
+
 	return jsonResponse(request, { isReturning: false, conversationId });
 }
 
