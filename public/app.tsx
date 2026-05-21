@@ -395,6 +395,7 @@ function ClientWorkspace() {
   const [isGeneratingProposal, setIsGeneratingProposal] = useState(false);
   const [error, setError] = useState('');
   const [mobileTab, setMobileTab] = useState<'chat' | 'brief' | 'proposal'>('chat');
+  const [copiedMessageId, setCopiedMessageId] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const agent = useAgent({
@@ -499,6 +500,12 @@ function ClientWorkspace() {
     }
   };
 
+  const copyMessage = async (message: ChatMessage) => {
+    await navigator.clipboard.writeText(message.content);
+    setCopiedMessageId(message.id);
+    window.setTimeout(() => setCopiedMessageId((current) => current === message.id ? '' : current), 1600);
+  };
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500">
@@ -553,13 +560,25 @@ function ClientWorkspace() {
                 <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   <div
                     className={[
-                      'max-w-[86%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-base leading-7 shadow-sm',
+                      'group relative max-w-[86%] rounded-2xl px-4 py-3 pr-16 text-base leading-7 shadow-sm',
                       message.role === 'user'
                         ? 'rounded-br-sm bg-slate-950 text-white'
                         : 'rounded-bl-sm border border-slate-200 bg-white text-slate-800',
                     ].join(' ')}
                   >
-                    {message.content}
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                    <button
+                      className={[
+                        'absolute right-2 top-2 rounded-md px-2 py-1 text-xs font-semibold opacity-70 transition hover:opacity-100 focus:opacity-100',
+                        message.role === 'user'
+                          ? 'bg-white/10 text-white hover:bg-white/20'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                      ].join(' ')}
+                      onClick={() => copyMessage(message)}
+                      type="button"
+                    >
+                      {copiedMessageId === message.id ? 'Copied' : 'Copy'}
+                    </button>
                   </div>
                 </div>
               ))}
