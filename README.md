@@ -1,14 +1,17 @@
 # Client Onboarding Agent
 
-AI-powered client intake for service businesses. The app collects basic lead details, guides prospects through project discovery, and stores structured onboarding conversations for follow-up.
+AI-powered client intake workspace for service businesses. It collects lead details, guides prospects through project discovery, builds a live structured brief, and lets an internal team review leads from a token-protected admin dashboard.
 
-## What It Does
+## Features
 
-- Runs as a Cloudflare Worker with a React chat UI served from Worker assets.
-- Uses Cloudflare Workers AI through a Durable Object agent.
-- Stores lead profiles, messages, and structured discovery state in Cloudflare D1.
-- Guides users through service discovery, brand goals, website goals, marketing intent, budget, and timeline.
-- Keeps the assistant scoped to configured services, pricing, and contact details.
+- First-run intake for name, email, mobile, and optional company.
+- Three-pane onboarding workspace with phase timeline, chat, option chips, live brief, and proposal panel.
+- Mobile tab layout for Chat, Brief, and Proposal.
+- Durable Object agent built with the Agents SDK and Workers AI.
+- Structured extraction with `generateObject` and `zod` after each user message.
+- D1 persistence for leads, messages, structured brief state, proposal artifacts, and lead status.
+- Admin dashboard at `/admin`, protected with `Authorization: Bearer <ADMIN_TOKEN>`.
+- No public history-by-email endpoint; client history is treated as internal data.
 
 ## Tech Stack
 
@@ -20,23 +23,22 @@ AI-powered client intake for service businesses. The app collects basic lead det
 - React
 - TypeScript
 - Vite
+- Tailwind CSS
 
 ## Project Structure
 
 ```text
 public/
-  app.tsx          React chat experience
+  app.tsx          Client workspace and admin dashboard
   index.html      Worker asset entry point
-  styles.css      App styling
+  styles.css      Tailwind entry
 src/
   agent.ts        Durable Object onboarding agent
-  index.ts        Worker routes and API handlers
-  prompts.ts      Prompt, service, and guardrail content
+  index.ts        Worker routes, RPC allowlist, and admin APIs
+  prompts.ts      Generic service profile and assistant prompts
+  shared.ts       Shared brief, proposal, phase, and snapshot types
   test-agent.ts   Local-only smoke-test agent
   types.ts        Worker binding types
-scripts/
-  test-wrangler.mjs
-  test-curl.sh
 schema.sql        D1 schema
 wrangler.jsonc    Cloudflare Worker configuration
 ```
@@ -56,7 +58,13 @@ npx wrangler d1 create client-onboarding-agent-db
 npx wrangler d1 execute client-onboarding-agent-db --file=schema.sql
 ```
 
-Update `wrangler.jsonc` with your D1 `database_id`. Add your production route only when you are ready to deploy.
+Update `wrangler.jsonc` with your D1 `database_id`.
+
+Set the admin token before deployment:
+
+```bash
+npx wrangler secret put ADMIN_TOKEN
+```
 
 For local development, apply the same schema to Wrangler's local D1 state:
 
@@ -64,7 +72,7 @@ For local development, apply the same schema to Wrangler's local D1 state:
 npx wrangler d1 execute client-onboarding-agent-db --local --file=schema.sql
 ```
 
-Generate Worker types:
+Generate Worker types when bindings change:
 
 ```bash
 npm run cf-typegen
@@ -78,16 +86,50 @@ npm run dev
 
 The Worker runs locally at `http://localhost:8787`. Workers AI calls use the Cloudflare account authenticated through Wrangler.
 
+Local admin testing uses `ADMIN_TOKEN` when it is configured. If no token is configured and the request is from localhost, the development fallback token is:
+
+```text
+dev-admin-token
+```
+
+Open the client workspace at `/` and the admin dashboard at `/admin`.
+
+## API Overview
+
+- `POST /api/chat/init` creates a conversation and initializes agent state.
+- `POST /agent/OnboardingAgent/:id` supports `sendMessage`, `sendMessageRich`, `getSnapshot`, and `generateProposal`.
+- `GET /api/chat/history` intentionally returns `410 Gone`.
+- `GET /api/admin/leads` lists lead summaries.
+- `GET /api/admin/leads/:id` returns messages, brief, proposal, and state.
+- `PATCH /api/admin/leads/:id` updates lead status.
+
+Admin APIs require:
+
+```http
+Authorization: Bearer <ADMIN_TOKEN>
+```
+
+## Verification
+
+```bash
+npm run check
+npm audit --omit=dev --audit-level=high
+```
+
+For local D1 testing:
+
+```bash
+npx wrangler d1 execute client-onboarding-agent-db --local --file=schema.sql
+```
+
 ## Deployment
 
 ```bash
 npm run deploy
 ```
 
-Before deploying a public copy, replace the placeholder D1 id in `wrangler.jsonc` and add the production route for your Cloudflare zone.
+Before deploying a public copy, replace placeholder Cloudflare resource identifiers in `wrangler.jsonc`, configure `ADMIN_TOKEN`, and add your production route when ready.
 
 ## Public Repo Notes
 
-This repository is safe to showcase as a project codebase after configuring your own Cloudflare resources. Do not commit `.dev.vars`, `.env`, `.wrangler`, local database state, or production-only Wrangler overrides.
-
-The app intentionally does not expose a public "load chat history by email" endpoint. Saved conversations contain client contact details and should only be accessed through authenticated internal tooling.
+This repository is designed to be reusable and generic. Configure your own Cloudflare resources and business profile before production use. Do not commit `.dev.vars`, `.env`, `.wrangler`, local database state, or production-only Wrangler overrides.

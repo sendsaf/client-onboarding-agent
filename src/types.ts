@@ -26,6 +26,11 @@ export interface Env {
 	 */
 	OnboardingAgent: DurableObjectNamespace<OnboardingAgentClass>;
 	TestAgent: DurableObjectNamespace<TestAgentClass>;
+
+	/**
+	 * Token required for admin dashboard API access.
+	 */
+	ADMIN_TOKEN?: string;
 }
 
 /**

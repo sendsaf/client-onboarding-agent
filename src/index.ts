@@ -11,7 +11,7 @@ export { OnboardingAgent, TestAgent };
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const AGENT_METHODS: Record<string, Set<string>> = {
-	OnboardingAgent: new Set(["sendMessage", "sendMessageStream"]),
+	OnboardingAgent: new Set(["sendMessage", "sendMessageStream", "sendMessageRich", "getSnapshot", "generateProposal"]),
 	TestAgent: new Set(["sendMessage", "getCount"]),
 };
 
@@ -93,11 +93,11 @@ function validateAgentCall(agentType: string, body: RpcBody) {
 		return { ok: false as const, message: "Unsupported agent method" };
 	}
 
-	if ((method === "sendMessage" || method === "sendMessageStream") && typeof args[0] !== "string") {
+	if ((method === "sendMessage" || method === "sendMessageStream" || method === "sendMessageRich") && typeof args[0] !== "string") {
 		return { ok: false as const, message: "Message must be a string" };
 	}
 
-	if (method === "sendMessage" && args.length > 1 && typeof args[1] !== "string") {
+	if ((method === "sendMessage" || method === "sendMessageRich") && args.length > 1 && typeof args[1] !== "string") {
 		return { ok: false as const, message: "Conversation id must be a string" };
 	}
 
@@ -152,6 +152,7 @@ async function createConversation(request: Request, env: Env) {
 	const email = normalizeEmail(payload?.email);
 	const name = normalizeText(payload?.name, 120);
 	const mobile = normalizeText(payload?.mobile, 40);
+	const company = normalizeText(payload?.company, 160);
 
 	if (!email || !name || !mobile) {
 		return jsonResponse(request, { error: "Valid email, name, and mobile are required" }, 400);
@@ -160,14 +161,117 @@ async function createConversation(request: Request, env: Env) {
 	const conversationId = crypto.randomUUID();
 
 	await env.DB.prepare(`
-		INSERT INTO conversations (id, client_name, email, phone, status)
-		VALUES (?, ?, ?, ?, 'active')
-	`).bind(conversationId, name, email, mobile).run();
+		INSERT INTO conversations (id, client_name, email, phone, company, status)
+		VALUES (?, ?, ?, ?, ?, 'active')
+	`).bind(conversationId, name, email, mobile, company).run();
 
 	const agent = await getAgentByName<Env, OnboardingAgent>(env.OnboardingAgent, conversationId);
-	await agent.initializeSession(email, name, mobile);
+	const session = await agent.initializeSession(email, name, mobile, company);
 
-	return jsonResponse(request, { isReturning: false, conversationId });
+	return jsonResponse(request, { isReturning: false, conversationId, snapshot: session.snapshot });
+}
+
+function getAdminToken(request: Request, env: Env) {
+	const configuredToken = env.ADMIN_TOKEN;
+	if (configuredToken) return configuredToken;
+
+	const url = new URL(request.url);
+	return isLocalHost(url.hostname) ? "dev-admin-token" : "";
+}
+
+function isAdminAuthorized(request: Request, env: Env) {
+	const token = getAdminToken(request, env);
+	if (!token) return false;
+	const authorization = request.headers.get("Authorization") || "";
+	return authorization === `Bearer ${token}`;
+}
+
+function adminUnauthorized(request: Request) {
+	return jsonResponse(request, { error: "Admin token required" }, 401);
+}
+
+function parseJsonState(value: unknown) {
+	if (typeof value !== "string" || !value) return null;
+	try {
+		return JSON.parse(value);
+	} catch {
+		return null;
+	}
+}
+
+async function listAdminLeads(request: Request, env: Env) {
+	if (!isAdminAuthorized(request, env)) return adminUnauthorized(request);
+
+	const result = await env.DB.prepare(`
+		SELECT c.id, c.client_name, c.email, c.phone, c.company, c.phase_completed, c.estimated_total,
+		       c.status, c.created_at, c.updated_at, d.json_data
+		FROM conversations c
+		LEFT JOIN conversation_data d ON d.conversation_id = c.id
+		ORDER BY c.updated_at DESC
+		LIMIT 100
+	`).all();
+
+	const leads = (result.results || []).map((row: Record<string, unknown>) => {
+		const state = parseJsonState(row.json_data);
+		return {
+			id: row.id,
+			name: row.client_name,
+			email: row.email,
+			phone: row.phone,
+			company: row.company,
+			status: row.status,
+			phase: row.phase_completed,
+			estimatedTotal: row.estimated_total,
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+			services: state?.brief?.services || [],
+			completion: state?.missingFields ? Math.max(0, Math.round(((13 - state.missingFields.length) / 13) * 100)) : 0,
+			proposalReady: Boolean(state?.proposal),
+		};
+	});
+
+	return jsonResponse(request, { leads });
+}
+
+async function getAdminLead(request: Request, env: Env, leadId: string) {
+	if (!isAdminAuthorized(request, env)) return adminUnauthorized(request);
+
+	const conversation = await env.DB.prepare(`
+		SELECT * FROM conversations WHERE id = ?
+	`).bind(leadId).first();
+
+	if (!conversation) return jsonResponse(request, { error: "Lead not found" }, 404);
+
+	const data = await env.DB.prepare(`
+		SELECT * FROM conversation_data WHERE conversation_id = ?
+	`).bind(leadId).first();
+
+	const messages = await env.DB.prepare(`
+		SELECT role, content, timestamp FROM messages
+		WHERE conversation_id = ?
+		ORDER BY timestamp ASC
+	`).bind(leadId).all();
+
+	return jsonResponse(request, {
+		lead: conversation,
+		messages: messages.results || [],
+		state: parseJsonState(data?.json_data),
+	});
+}
+
+async function updateAdminLead(request: Request, env: Env, leadId: string) {
+	if (!isAdminAuthorized(request, env)) return adminUnauthorized(request);
+
+	const payload = await request.json().catch(() => null) as Record<string, unknown> | null;
+	const status = normalizeText(payload?.status, 40);
+	const allowed = new Set(["active", "qualified", "completed", "abandoned", "archived"]);
+	if (!allowed.has(status)) return jsonResponse(request, { error: "Invalid status" }, 400);
+
+	await env.DB.prepare(`
+		UPDATE conversations SET status = ?, updated_at = datetime('now') WHERE id = ?
+	`).bind(status, leadId).run();
+
+	return getAdminLead(request, env, leadId);
 }
 
 async function testAi(request: Request, env: Env) {
@@ -213,6 +317,19 @@ export default {
 			return jsonResponse(request, { error: "Public chat history endpoints are disabled" }, 410);
 		}
 
+		if (url.pathname === "/api/admin/leads" && request.method === "GET") {
+			return listAdminLeads(request, env);
+		}
+
+		const adminLeadMatch = url.pathname.match(/^\/api\/admin\/leads\/([^/]+)$/);
+		if (adminLeadMatch && request.method === "GET") {
+			return getAdminLead(request, env, adminLeadMatch[1]);
+		}
+
+		if (adminLeadMatch && request.method === "PATCH") {
+			return updateAdminLead(request, env, adminLeadMatch[1]);
+		}
+
 		if (url.pathname === "/api/test-ai" && request.method === "POST") {
 			if (!isLocalHost(url.hostname)) return new Response("Not found", { status: 404 });
 			return testAi(request, env);
@@ -220,6 +337,10 @@ export default {
 
 		const agentResponse = await handleAgentRequest(request, env);
 		if (agentResponse) return withCors(request, agentResponse);
+
+		if (url.pathname === "/admin") {
+			return env.ASSETS.fetch(new Request(new URL("/", request.url), request));
+		}
 
 		return env.ASSETS.fetch(request);
 	},

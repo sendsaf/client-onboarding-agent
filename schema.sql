@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     company TEXT,
     phase_completed INTEGER DEFAULT 0,
     estimated_total INTEGER DEFAULT 0,
-    status TEXT DEFAULT 'active', -- active, completed, abandoned
+    status TEXT DEFAULT 'active', -- active, qualified, completed, abandoned, archived
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
