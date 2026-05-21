@@ -1,0 +1,37 @@
+{
+	"name": "client-onboarding-agent",
+	"description": "AI client onboarding assistant for service businesses",
+	"type": "module",
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20260521.1",
+		"@tailwindcss/postcss": "^4.2.2",
+		"@types/node": "24.10.1",
+		"@vitejs/plugin-react": "^4.7.0",
+		"autoprefixer": "^10.4.27",
+		"postcss": "^8.5.9",
+		"tailwindcss": "^4.2.2",
+		"typescript": "5.9.3",
+		"vite": "^7.3.2",
+		"wrangler": "^4.93.0"
+	},
+	"private": true,
+	"scripts": {
+		"cf-typegen": "wrangler types",
+		"check": "tsc --noEmit && npm run build",
+		"build": "vite build",
+		"deploy": "npm run build && wrangler deploy",
+		"dev": "npm run build && wrangler dev",
+		"start": "wrangler dev",
+		"test:agent": "node scripts/test-wrangler.mjs",
+		"test:curl": "bash scripts/test-curl.sh"
+	},
+	"dependencies": {
+		"@types/react": "^19.2.14",
+		"@types/react-dom": "^19.2.3",
+		"agents": "^0.10.0",
+		"ai": "^6.0.154",
+		"react": "^19.2.5",
+		"react-dom": "^19.2.5",
+		"workers-ai-provider": "^3.1.10"
+	}
+}

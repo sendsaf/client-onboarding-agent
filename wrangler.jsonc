@@ -1,0 +1,55 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "client-onboarding-agent",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-10-08",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"binding": "ASSETS",
+		"directory": "./dist"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"ai": {
+		"binding": "AI",
+		"remote": true
+	},
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "OnboardingAgent",
+				"class_name": "OnboardingAgent"
+			},
+			{
+				"name": "TestAgent",
+				"class_name": "TestAgent"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["OnboardingAgent"]
+		},
+		{
+			"tag": "v3",
+			"new_sqlite_classes": ["TestAgent"]
+		}
+	],
+	"upload_source_maps": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "client-onboarding-agent-db",
+			"database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+		}
+	]
+}
